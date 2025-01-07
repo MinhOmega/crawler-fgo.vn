@@ -15,11 +15,52 @@ on:
     - cron: "0 0 * * *" # Run daily at midnight UTC
 
 jobs:
-  download-images:
+  prepare-matrix:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      total_end: ${{ steps.set-matrix.outputs.total_end }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Load state and prepare matrix
+        id: set-matrix
+        run: |
+          if [ -f range.json ]; then
+            start=$(jq -r '.start' range.json)
+            end=$(jq -r '.end' range.json)
+          else
+            start="${{ inputs.start_range || '87000' }}"
+            end="${{ inputs.end_range || '87500' }}"
+          fi
+          
+          # Calculate batches of 500
+          ranges=()
+          current=$start
+          while [ $current -lt $end ]; do
+            batch_end=$((current + 500))
+            if [ $batch_end -gt $end ]; then
+              batch_end=$end
+            fi
+            ranges+=("{\"start\":$current,\"end\":$batch_end}")
+            current=$((batch_end + 1))
+          done
+          
+          matrix=$(printf '%s\n' "${ranges[@]}" | jq -sc '{range: .}')
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "total_end=$end" >> $GITHUB_OUTPUT
+
+  download-batch:
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{fromJson(needs.prepare-matrix.outputs.matrix)}}
+      fail-fast: false
+      max-parallel: 2
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -37,67 +78,52 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests Pillow
 
-      - name: Load state
-        id: load-state
+      - name: Process batch
         run: |
-          if [ -f range.json ]; then
-            start=$(jq -r '.start' range.json)
-            end=$(jq -r '.end' range.json)
-          else
-            start="${{ inputs.start_range || '87000' }}"
-            end="${{ inputs.end_range || '87500' }}"
-          fi
-          echo "start=$start" >> $GITHUB_OUTPUT
-          echo "end=$end" >> $GITHUB_OUTPUT
+          today=$(date +%Y%m%d)
+          folder="images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
+          mkdir -p "$folder"
+          
+          echo "Processing batch: ${{ matrix.range.start }} to ${{ matrix.range.end }}"
+          python script.py ${{ matrix.range.start }} ${{ matrix.range.end }}
 
-      - name: Process images in batches
+      - name: Stage changes
         run: |
-          start=${{ steps.load-state.outputs.start }}
-          end=${{ steps.load-state.outputs.end }}
-          batch_size=500
+          today=$(date +%Y%m%d)
+          git add "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
 
-          current=$start
-          while [ $current -lt $end ]; do
-            batch_end=$((current + batch_size))
-            if [ $batch_end -gt $end ]; then
-              batch_end=$end
-            fi
-            
-            today=$(date +%Y%m%d)
-            folder="images_${today}_${current}_to_${batch_end}"
-            mkdir -p "$folder"
-            
-            echo "Processing batch: $current to $batch_end"
-            python script.py $current $batch_end
-            
-            current=$((batch_end + 1))
-            
-            # Add small delay between batches to avoid rate limiting
-            sleep 2
-          done
+  commit-changes:
+    needs: [prepare-matrix, download-batch]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      - name: Update state and commit
+      - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Update range.json for next run
-          end=${{ steps.load-state.outputs.end }}
-          next_start=$((end + 1))
-          next_end=$((end + 501))
+          next_start=$((${{ needs.prepare-matrix.outputs.total_end }} + 1))
+          next_end=$((${{ needs.prepare-matrix.outputs.total_end }} + 501))
           echo "{\"start\": $next_start, \"end\": $next_end}" > range.json
-
-          # Add all changes
           git add range.json
-          git add images_*
 
+          # Add all staged changes from previous jobs
+          git add images_*
+          
           if git diff --staged --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-
+          
           today=$(date +%Y%m%d)
-          start=${{ steps.load-state.outputs.start }}
-          end=${{ steps.load-state.outputs.end }}
-          git commit -m "images_${today}_${start}_to_${end}"
+          git commit -m "images_${today}_batch_download"
           git push
