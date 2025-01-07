@@ -88,7 +88,7 @@ jobs:
           mkdir -p "$folder"
           
           echo "Processing batch: ${{ matrix.range.start }} to ${{ matrix.range.end }}"
-          python script.py ${{ matrix.range.start }} ${{ matrix.range.end }}
+          python crawler_images.py ${{ matrix.range.start }} ${{ matrix.range.end }}
           
           # Check if any images were downloaded
           image_count=$(find "$folder" -name "*.jpg" | wc -l)
@@ -209,6 +209,6 @@ jobs:
             exit 0
           fi
           
-          today=$(date +%Y%m%d)
-          git commit -m "chore: download images ${today} from ${next_start} to ${next_end}"
+          today=$(date +%Y-%m-%d)
+          git commit -m "chore: download images in ${today} from ids ${next_start} to ${next_end}"
           git push
