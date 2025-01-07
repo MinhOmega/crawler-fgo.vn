@@ -12,7 +12,8 @@ on:
         required: false
         type: string
   schedule:
-    - cron: "0 0 * * *" # Run daily at midnight UTC
+    # Run at 3AM Vietnam time (UTC+7) on 1st, 8th, 15th, and 22nd of each month
+    - cron: "0 20 1,8,15,22 * *"  # 20:00 UTC = 03:00 UTC+7 next day
 
 jobs:
   prepare-matrix:
@@ -24,7 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT }}
 
       - name: Load state and prepare matrix
         id: set-matrix
@@ -56,6 +57,8 @@ jobs:
   download-batch:
     needs: prepare-matrix
     runs-on: ubuntu-latest
+    outputs:
+      has_images: ${{ steps.check-downloads.outputs.has_images }}
     strategy:
       matrix: ${{fromJson(needs.prepare-matrix.outputs.matrix)}}
       fail-fast: false
@@ -65,8 +68,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
+          token: ${{ secrets.PAT }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -79,6 +81,7 @@ jobs:
           pip install requests Pillow
 
       - name: Process batch
+        id: check-downloads
         run: |
           today=$(date +%Y%m%d)
           folder="images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
@@ -86,6 +89,25 @@ jobs:
           
           echo "Processing batch: ${{ matrix.range.start }} to ${{ matrix.range.end }}"
           python script.py ${{ matrix.range.start }} ${{ matrix.range.end }}
+          
+          # Check if any images were downloaded
+          image_count=$(find "$folder" -name "*.jpg" | wc -l)
+          if [ "$image_count" -eq 0 ]; then
+            echo "No images downloaded in this batch"
+            echo "has_images=false" >> $GITHUB_OUTPUT
+            
+            # Log the empty range
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - No images found in range ${{ matrix.range.start }} to ${{ matrix.range.end }}" >> empty_ranges.log
+            
+            # Commit the log file
+            git config user.name "${{ github.repository_owner }}"
+            git config user.email "${{ github.repository_owner }}@users.noreply.github.com"
+            git add empty_ranges.log
+            git commit -m "log: no images found in range ${{ matrix.range.start }} to ${{ matrix.range.end }}"
+            git push
+          else
+            echo "has_images=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Upload batch artifacts
         uses: actions/upload-artifact@v4
@@ -96,6 +118,7 @@ jobs:
 
   commit-changes:
     needs: [prepare-matrix, download-batch]
+    if: needs.download-batch.outputs.has_images == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -104,7 +127,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT }}
           fetch-depth: 0
 
       - name: Download all artifacts
@@ -169,8 +192,8 @@ jobs:
 
       - name: Commit and push changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ github.repository_owner }}"
+          git config user.email "${{ github.repository_owner }}@users.noreply.github.com"
 
           # Update range.json for next run
           next_start=$((${{ needs.prepare-matrix.outputs.total_end }} + 1))
