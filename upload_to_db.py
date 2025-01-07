@@ -74,8 +74,10 @@ def main(folder_path):
         if 'URL' in key or 'MONGO' in key:
             print(f"{key}: {'*' * (len(value) if value else 0)}")  # Hide actual value for security
     
-    # Get MongoDB URL from environment
+    # Get required environment variables
     mongodb_url = os.environ.get('MONGODB_URL')
+    repo_owner = os.environ.get('REPO_OWNER')
+    repo_name = os.environ.get('REPO_NAME')
     
     if not mongodb_url:
         print("\nError: MongoDB URL not found in environment variables")
@@ -91,8 +93,8 @@ def main(folder_path):
     success = process_images(
         folder_path, 
         collection,
-        repo_owner="MinhOmega",
-        repo_name="crawler-fgo.vn"
+        repo_owner=repo_owner,
+        repo_name=repo_name
     )
     
     return success
