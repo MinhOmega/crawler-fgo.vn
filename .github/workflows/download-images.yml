@@ -1,0 +1,114 @@
+name: Download Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_range:
+        description: 'Start range (optional)'
+        required: false
+        type: string
+      end_range:
+        description: 'End range (optional)'
+        required: false
+        type: string
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight UTC
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.PAT }}
+
+      - name: Install jq
+        run: sudo apt-get install jq -y
+
+      - name: Load state and prepare matrix
+        id: set-matrix
+        run: |
+          if [ -f range.json ]; then
+            start=$(jq -r '.start' range.json)
+            end=$(jq -r '.end' range.json)
+          else
+            start="${{ inputs.start_range || '87000' }}"
+            end="${{ inputs.end_range || '87500' }}"
+          fi
+          
+          # Calculate batches of 500
+          ranges=()
+          current=$start
+          while [ $current -lt $end ]; do
+            batch_end=$((current + 500))
+            if [ $batch_end -gt $end ]; then
+              batch_end=$end
+            fi
+            ranges+=("{\"start\":$current,\"end\":$batch_end}")
+            current=$((batch_end + 1))
+          done
+          
+          matrix=$(printf '%s\n' "${ranges[@]}" | jq -sc '{range: .}')
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
+  batch-download:
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{fromJson(needs.prepare-matrix.outputs.matrix)}}
+      fail-fast: false
+      max-parallel: 2  # Limit parallel jobs to avoid rate limiting
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT }}
+          fetch-depth: 0  # Fetch all history for proper git operations
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Create batch directory
+        run: |
+          today=$(date +%Y%m%d)
+          mkdir -p "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
+
+      - name: Run Python script for batch
+        run: |
+          python script.py ${{ matrix.range.start }} ${{ matrix.range.end }}
+
+      - name: Update state and commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+        run: |
+          git config user.name "${{ github.repository_owner }}"
+          git config user.email "${{ github.repository_owner }}@users.noreply.github.com"
+          
+          today=$(date +%Y%m%d)
+          
+          # Only update range.json if this is the last batch
+          if [ ! -f range.json ] || [ ${{ matrix.range.end }} -eq $(jq -r '.end' range.json) ]; then
+            echo "{\"start\": ${{ matrix.range.end + 1 }}, \"end\": ${{ matrix.range.end + 501 }}}" > range.json
+            git add range.json
+          fi
+          
+          git add "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
+          git push 
