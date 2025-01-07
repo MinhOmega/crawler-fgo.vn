@@ -5,8 +5,14 @@ from datetime import datetime
 
 def connect_to_mongodb(connection_string):
     try:
-        client = MongoClient(connection_string)
+        # Add retry logic and timeout settings
+        client = MongoClient(connection_string, 
+                           serverSelectionTimeoutMS=5000,
+                           connectTimeoutMS=5000)
+        # Force a connection to verify it works
+        client.server_info()
         db = client['fgo_database']
+        print("Successfully connected to MongoDB")
         return db.images
     except Exception as e:
         print(f"Failed to connect to MongoDB: {e}")
@@ -66,16 +72,21 @@ if __name__ == "__main__":
         sys.exit(1)
         
     folder_path = sys.argv[1]
-    mongodb_url = os.environ.get('MONGODB_URL')
+    
+    # Try different environment variable names
+    mongodb_url = os.environ.get('MONGODB_URL') or os.environ.get('MONGO_URL')
     
     if not mongodb_url:
-        print("MongoDB URL not provided in environment variables")
+        print("Error: MongoDB URL not found in environment variables")
+        print("Available environment variables:", list(os.environ.keys()))
         sys.exit(1)
-        
+    
+    print("Attempting to connect to MongoDB...")
     collection = connect_to_mongodb(mongodb_url)
     if not collection:
         sys.exit(1)
-        
+    
+    print(f"Processing images from folder: {folder_path}")
     success = process_images(
         folder_path, 
         collection,

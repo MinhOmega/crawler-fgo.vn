@@ -132,6 +132,9 @@ jobs:
         env:
           MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: |
+          # Export the MongoDB URL for Python script
+          export MONGODB_URL="${MONGODB_URL}"
+          
           # Process each image folder
           for folder in images_*; do
             if [ -d "$folder" ]; then
