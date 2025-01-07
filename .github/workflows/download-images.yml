@@ -132,14 +132,19 @@ jobs:
         env:
           MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: |
-          # Export the MongoDB URL for Python script
-          export MONGODB_URL="${MONGODB_URL}"
+          # Debug environment variable
+          echo "Checking MongoDB URL presence..."
+          if [ -n "$MONGODB_URL" ]; then
+            echo "MongoDB URL is set"
+          else
+            echo "MongoDB URL is not set"
+          fi
           
           # Process each image folder
           for folder in images_*; do
             if [ -d "$folder" ]; then
               echo "Processing folder: $folder"
-              python upload_to_db.py "$folder"
+              MONGODB_URL="$MONGODB_URL" python upload_to_db.py "$folder"
             fi
           done
 

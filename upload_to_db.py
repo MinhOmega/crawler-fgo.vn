@@ -5,6 +5,7 @@ from datetime import datetime
 
 def connect_to_mongodb(connection_string):
     try:
+        print(f"Connecting to MongoDB with string length: {len(connection_string)}")
         # Add retry logic and timeout settings
         client = MongoClient(connection_string, 
                            serverSelectionTimeoutMS=5000,
@@ -24,6 +25,7 @@ def process_images(folder_path, collection, repo_owner, repo_name, branch='main'
     try:
         # Get all jpg files in the folder
         image_files = [f for f in os.listdir(folder_path) if f.endswith('.jpg')]
+        print(f"Found {len(image_files)} images in {folder_path}")
         
         # Prepare bulk operations
         operations = []
@@ -73,20 +75,26 @@ if __name__ == "__main__":
         
     folder_path = sys.argv[1]
     
+    # Debug environment variables
+    print("\nEnvironment variables:")
+    for key, value in os.environ.items():
+        if 'URL' in key or 'MONGO' in key:
+            print(f"{key}: {'*' * (len(value) if value else 0)}")  # Hide actual value for security
+    
     # Try different environment variable names
-    mongodb_url = os.environ.get('MONGODB_URL') or os.environ.get('MONGO_URL')
+    mongodb_url = os.environ.get('MONGODB_URL')
     
     if not mongodb_url:
-        print("Error: MongoDB URL not found in environment variables")
-        print("Available environment variables:", list(os.environ.keys()))
+        print("\nError: MongoDB URL not found in environment variables")
+        print("Available environment variables:", sorted(list(os.environ.keys())))
         sys.exit(1)
     
-    print("Attempting to connect to MongoDB...")
+    print("\nAttempting to connect to MongoDB...")
     collection = connect_to_mongodb(mongodb_url)
     if not collection:
         sys.exit(1)
     
-    print(f"Processing images from folder: {folder_path}")
+    print(f"\nProcessing images from folder: {folder_path}")
     success = process_images(
         folder_path, 
         collection,
