@@ -125,5 +125,5 @@ jobs:
           fi
           
           today=$(date +%Y%m%d)
-          git commit -m "images_${today}_batch_download"
+          git commit -m "chore: download images ${today} from ${next_start} to ${next_end}"
           git push
