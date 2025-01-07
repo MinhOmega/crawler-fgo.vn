@@ -123,6 +123,20 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Debug Secrets
+        run: |
+          if [ -n "${{ secrets.MONGODB_URL }}" ]; then
+            echo "MONGODB_URL is accessible"
+            echo "MongoDB URL length: ${#MONGODB_URL}"
+          else
+            echo "MONGODB_URL is not accessible"
+            exit 1
+          fi
+
+      - name: Debug MongoDB URL (masked)
+        run: |
+          echo "MONGODB_URL=${{ secrets.MONGODB_URL }}" | sed 's/./*/g'
+
       - name: Install MongoDB dependencies
         run: |
           python -m pip install --upgrade pip
@@ -132,22 +146,22 @@ jobs:
         env:
           MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: |
-          # Debug environment variable
-          echo "Checking MongoDB URL presence..."
+          # Debug MongoDB URL presence (safely)
           if [ -n "$MONGODB_URL" ]; then
-            echo "MongoDB URL is set with length: ${#MONGODB_URL}"
+            echo "MongoDB URL is set (length: ${#MONGODB_URL})"
+            
+            # Process each image folder
+            for folder in images_*; do
+              if [ -d "$folder" ]; then
+                echo "Processing folder: $folder"
+                # Pass environment variable explicitly
+                MONGODB_URL="$MONGODB_URL" python3 upload_to_db.py "$folder"
+              fi
+            done
           else
-            echo "MongoDB URL is not set"
+            echo "Error: MongoDB URL is not set"
             exit 1
           fi
-          
-          # Process each image folder
-          for folder in images_*; do
-            if [ -d "$folder" ]; then
-              echo "Processing folder: $folder"
-              python3 -c "import os,sys; os.environ['MONGODB_URL']=os.environ.get('MONGODB_URL',''); sys.path.append('.'); import upload_to_db; upload_to_db.main('$folder')"
-            fi
-          done
 
       - name: Commit and push changes
         run: |
