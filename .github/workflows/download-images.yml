@@ -4,66 +4,22 @@ on:
   workflow_dispatch:
     inputs:
       start_range:
-        description: 'Start range (optional)'
+        description: "Start range (optional)"
         required: false
         type: string
       end_range:
-        description: 'End range (optional)'
+        description: "End range (optional)"
         required: false
         type: string
   schedule:
-    - cron: '0 0 * * *'  # Run daily at midnight UTC
+    - cron: "0 0 * * *" # Run daily at midnight UTC
 
 jobs:
-  prepare-matrix:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install jq
-        run: sudo apt-get install jq -y
-
-      - name: Load state and prepare matrix
-        id: set-matrix
-        run: |
-          if [ -f range.json ]; then
-            start=$(jq -r '.start' range.json)
-            end=$(jq -r '.end' range.json)
-          else
-            start="${{ inputs.start_range || '87000' }}"
-            end="${{ inputs.end_range || '87500' }}"
-          fi
-          
-          # Calculate batches of 500
-          ranges=()
-          current=$start
-          while [ $current -lt $end ]; do
-            batch_end=$((current + 500))
-            if [ $batch_end -gt $end ]; then
-              batch_end=$end
-            fi
-            ranges+=("{\"start\":$current,\"end\":$batch_end}")
-            current=$((batch_end + 1))
-          done
-          
-          matrix=$(printf '%s\n' "${ranges[@]}" | jq -sc '{range: .}')
-          echo "matrix=$matrix" >> $GITHUB_OUTPUT
-
-  batch-download:
-    needs: prepare-matrix
+  download-images:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    strategy:
-      matrix: ${{fromJson(needs.prepare-matrix.outputs.matrix)}}
-      fail-fast: false
-      max-parallel: 2  # Limit parallel jobs to avoid rate limiting
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -74,43 +30,74 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests Pillow
 
-      - name: Create batch directory
+      - name: Load state
+        id: load-state
         run: |
-          today=$(date +%Y%m%d)
-          mkdir -p "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
+          if [ -f range.json ]; then
+            start=$(jq -r '.start' range.json)
+            end=$(jq -r '.end' range.json)
+          else
+            start="${{ inputs.start_range || '87000' }}"
+            end="${{ inputs.end_range || '87500' }}"
+          fi
+          echo "start=$start" >> $GITHUB_OUTPUT
+          echo "end=$end" >> $GITHUB_OUTPUT
 
-      - name: Run Python script for batch
+      - name: Process images in batches
         run: |
-          python script.py ${{ matrix.range.start }} ${{ matrix.range.end }}
+          start=${{ steps.load-state.outputs.start }}
+          end=${{ steps.load-state.outputs.end }}
+          batch_size=500
+
+          current=$start
+          while [ $current -lt $end ]; do
+            batch_end=$((current + batch_size))
+            if [ $batch_end -gt $end ]; then
+              batch_end=$end
+            fi
+            
+            today=$(date +%Y%m%d)
+            folder="images_${today}_${current}_to_${batch_end}"
+            mkdir -p "$folder"
+            
+            echo "Processing batch: $current to $batch_end"
+            python script.py $current $batch_end
+            
+            current=$((batch_end + 1))
+            
+            # Add small delay between batches to avoid rate limiting
+            sleep 2
+          done
 
       - name: Update state and commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          today=$(date +%Y%m%d)
-          
-          # Only update range.json if this is the last batch
-          if [ ! -f range.json ] || [ ${{ matrix.range.end }} -eq $(jq -r '.end' range.json) ]; then
-            next_start=$((${{ matrix.range.end }} + 1))
-            next_end=$((${{ matrix.range.end }} + 501))
-            echo "{\"start\": $next_start, \"end\": $next_end}" > range.json
-            git add range.json
-          fi
-          
-          git add "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
-          
+
+          # Update range.json for next run
+          end=${{ steps.load-state.outputs.end }}
+          next_start=$((end + 1))
+          next_end=$((end + 501))
+          echo "{\"start\": $next_start, \"end\": $next_end}" > range.json
+
+          # Add all changes
+          git add range.json
+          git add images_*
+
           if git diff --staged --quiet; then
             echo "No changes to commit"
             exit 0
           fi
-          
-          git commit -m "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
-          git push 
+
+          today=$(date +%Y%m%d)
+          start=${{ steps.load-state.outputs.start }}
+          end=${{ steps.load-state.outputs.end }}
+          git commit -m "images_${today}_${start}_to_${end}"
+          git push

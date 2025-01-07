@@ -5,6 +5,17 @@ import sys
 import json
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from io import BytesIO
+from PIL import Image
+
+def is_valid_image(content):
+    try:
+        # Try to open the content as an image using PIL
+        img = Image.open(BytesIO(content))
+        img.verify()  # Verify it's actually an image
+        return True
+    except Exception:
+        return False
 
 def download_image(code, base_folder):
     code_str = f"s{code}"
@@ -15,18 +26,33 @@ def download_image(code, base_folder):
         response = requests.get(url, stream=True)
         response.raise_for_status()
 
+        # Get the full content
+        content = response.content
+
+        # Check if it's a valid image
+        if not is_valid_image(content):
+            print(f"Invalid image content for {url}")
+            return False
+
+        # Check if the response contains the error message
+        if "Mã hình ảnh không đúng!" in response.text:
+            print(f"Invalid image code for {url}")
+            return False
+
         # Save the image to the corresponding folder
         image_path = os.path.join(base_folder, f"{code_str}.jpg")
         
         with open(image_path, "wb") as file:
-            for chunk in response.iter_content(1024):
-                file.write(chunk)
+            file.write(content)
 
         print(f"Downloaded and saved: {image_path}")
         return True
 
     except requests.RequestException as e:
         print(f"Failed to download {url}: {e}")
+        return False
+    except Exception as e:
+        print(f"Error processing {url}: {e}")
         return False
 
 if __name__ == "__main__":
