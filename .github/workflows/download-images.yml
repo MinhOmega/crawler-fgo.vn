@@ -118,6 +118,28 @@ jobs:
           cp -r ./downloads/* ./
           rm -rf ./downloads
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install MongoDB dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pymongo
+
+      - name: Upload to MongoDB
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+        run: |
+          # Process each image folder
+          for folder in images_*; do
+            if [ -d "$folder" ]; then
+              echo "Processing folder: $folder"
+              python upload_to_db.py "$folder"
+            fi
+          done
+
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
