@@ -1,6 +1,6 @@
 import os
 import sys
-from pymongo import MongoClient
+from pymongo import MongoClient, UpdateOne
 from datetime import datetime
 
 def connect_to_mongodb(connection_string):
@@ -44,15 +44,13 @@ def process_images(folder_path, collection, repo_owner, repo_name, branch='main'
                 'created_at': datetime.utcnow()
             }
             
-            # Prepare upsert operation
+            # Prepare upsert operation using UpdateOne instead of replaceOne
             operations.append(
-                {
-                    'replaceOne': {
-                        'filter': {'code': image_code},
-                        'replacement': doc,
-                        'upsert': True
-                    }
-                }
+                UpdateOne(
+                    {'code': image_code},
+                    {'$set': doc},
+                    upsert=True
+                )
             )
         
         if operations:
