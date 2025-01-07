@@ -86,7 +86,7 @@ def main(folder_path):
     
     print("\nAttempting to connect to MongoDB...")
     collection = connect_to_mongodb(mongodb_url)
-    if not collection:
+    if collection is None:
         return False
     
     print(f"\nProcessing images from folder: {folder_path}")
