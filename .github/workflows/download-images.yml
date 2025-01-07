@@ -124,8 +124,10 @@ jobs:
           python-version: "3.x"
 
       - name: Debug Secrets
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: |
-          if [ -n "${{ secrets.MONGODB_URL }}" ]; then
+          if [ -n "$MONGODB_URL" ]; then
             echo "MONGODB_URL is accessible"
             echo "MongoDB URL length: ${#MONGODB_URL}"
           else
@@ -134,8 +136,10 @@ jobs:
           fi
 
       - name: Debug MongoDB URL (masked)
+        env:
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: |
-          echo "MONGODB_URL=${{ secrets.MONGODB_URL }}" | sed 's/./*/g'
+          echo "MONGODB_URL is set (length: ${#MONGODB_URL})"
 
       - name: Install MongoDB dependencies
         run: |
@@ -146,7 +150,6 @@ jobs:
         env:
           MONGODB_URL: ${{ secrets.MONGODB_URL }}
         run: |
-          # Debug MongoDB URL presence (safely)
           if [ -n "$MONGODB_URL" ]; then
             echo "MongoDB URL is set (length: ${#MONGODB_URL})"
             
@@ -154,8 +157,7 @@ jobs:
             for folder in images_*; do
               if [ -d "$folder" ]; then
                 echo "Processing folder: $folder"
-                # Pass environment variable explicitly
-                MONGODB_URL="$MONGODB_URL" python3 upload_to_db.py "$folder"
+                python3 upload_to_db.py "$folder"
               fi
             done
           else
