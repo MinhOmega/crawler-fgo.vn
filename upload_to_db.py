@@ -3,8 +3,9 @@ import sys
 from pymongo import MongoClient, UpdateOne
 from datetime import datetime, UTC
 
-def connect_to_mongodb(connection_string, repo_name):
+def connect_to_mongodb(connection_string):
     try:
+        repo_name = 'fgo_database'
         print(f"Connecting to MongoDB with string length: {len(connection_string)}")
         # Add retry logic and timeout settings
         client = MongoClient(connection_string, 
@@ -106,7 +107,7 @@ def main(folder_path):
         return False
     
     print("\nAttempting to connect to MongoDB...")
-    collection = connect_to_mongodb(mongodb_url, repo_name)
+    collection = connect_to_mongodb(mongodb_url)
     if collection is None:
         return False
     
