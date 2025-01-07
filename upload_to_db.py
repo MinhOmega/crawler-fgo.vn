@@ -1,9 +1,9 @@
 import os
 import sys
 from pymongo import MongoClient, UpdateOne
-from datetime import datetime
+from datetime import datetime, UTC
 
-def connect_to_mongodb(connection_string):
+def connect_to_mongodb(connection_string, repo_name):
     try:
         print(f"Connecting to MongoDB with string length: {len(connection_string)}")
         # Add retry logic and timeout settings
@@ -12,7 +12,14 @@ def connect_to_mongodb(connection_string):
                            connectTimeoutMS=5000)
         # Force a connection to verify it works
         client.server_info()
-        db = client['fgo_database']
+        db = client[repo_name]
+        
+        # Check if collection exists, create if it doesn't
+        if 'images' not in db.list_collection_names():
+            db.create_collection('images')
+            print(f"Created new 'images' collection in database {repo_name}")
+        else:
+            print(f"Using existing 'images' collection in database {repo_name}")
         print("Successfully connected to MongoDB")
         return db.images
     except Exception as e:
@@ -35,16 +42,30 @@ def process_images(folder_path, collection, repo_owner, repo_name, branch='main'
             
             image_url = f"{base_url}/{folder_path}/{image_file}"
             
-            # Prepare document
+            # Check if document exists with same code but different URL
+            existing_doc = collection.find_one({'code': image_code})
+            
+            # Skip if document exists with same code and URL
+            if existing_doc and existing_doc.get('url') == image_url:
+                print(f"Skipping {image_code}: Already exists with same URL")
+                continue
+                
+            # Prepare document with timezone-aware timestamps
+            current_time = datetime.now(UTC)
             doc = {
                 'code': image_code,
                 'number': image_number,
                 'url': image_url,
                 'folder': folder_path,
-                'created_at': datetime.utcnow()
+                'created_at': current_time,
+                'updated_at': current_time
             }
             
-            # Prepare upsert operation using UpdateOne instead of replaceOne
+            # Add created_at only for new documents
+            if not existing_doc:
+                doc['created_at'] = current_time
+            
+            # Prepare upsert operation
             operations.append(
                 UpdateOne(
                     {'code': image_code},
@@ -58,7 +79,7 @@ def process_images(folder_path, collection, repo_owner, repo_name, branch='main'
             result = collection.bulk_write(operations)
             print(f"Processed {len(operations)} images: {result.upserted_count} inserted, {result.modified_count} modified")
         else:
-            print("No images found to process")
+            print("No new or updated images to process")
             
     except Exception as e:
         print(f"Error processing images: {e}")
@@ -85,7 +106,7 @@ def main(folder_path):
         return False
     
     print("\nAttempting to connect to MongoDB...")
-    collection = connect_to_mongodb(mongodb_url)
+    collection = connect_to_mongodb(mongodb_url, repo_name)
     if collection is None:
         return False
     
