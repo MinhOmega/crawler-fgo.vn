@@ -87,10 +87,12 @@ jobs:
           echo "Processing batch: ${{ matrix.range.start }} to ${{ matrix.range.end }}"
           python script.py ${{ matrix.range.start }} ${{ matrix.range.end }}
 
-      - name: Stage changes
-        run: |
-          today=$(date +%Y%m%d)
-          git add "images_${today}_${{ matrix.range.start }}_to_${{ matrix.range.end }}"
+      - name: Upload batch artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: batch-${{ matrix.range.start }}-${{ matrix.range.end }}
+          path: images_*
+          retention-days: 1
 
   commit-changes:
     needs: [prepare-matrix, download-batch]
@@ -105,6 +107,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./downloads
+          merge-multiple: true
+
+      - name: Move artifacts to root
+        run: |
+          cp -r ./downloads/* ./
+          rm -rf ./downloads
+
       - name: Commit and push changes
         run: |
           git config user.name "github-actions[bot]"
@@ -116,7 +129,7 @@ jobs:
           echo "{\"start\": $next_start, \"end\": $next_end}" > range.json
           git add range.json
 
-          # Add all staged changes from previous jobs
+          # Add all downloaded images
           git add images_*
           
           if git diff --staged --quiet; then
