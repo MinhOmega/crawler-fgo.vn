@@ -68,31 +68,26 @@ def process_images(folder_path, collection, repo_owner, repo_name, branch='main'
     
     return True
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python upload_to_db.py <folder_path>")
-        sys.exit(1)
-        
-    folder_path = sys.argv[1]
-    
+def main(folder_path):
+    """Main function that can be called directly or through __main__"""
     # Debug environment variables
     print("\nEnvironment variables:")
     for key, value in os.environ.items():
         if 'URL' in key or 'MONGO' in key:
             print(f"{key}: {'*' * (len(value) if value else 0)}")  # Hide actual value for security
     
-    # Try different environment variable names
+    # Get MongoDB URL from environment
     mongodb_url = os.environ.get('MONGODB_URL')
     
     if not mongodb_url:
         print("\nError: MongoDB URL not found in environment variables")
         print("Available environment variables:", sorted(list(os.environ.keys())))
-        sys.exit(1)
+        return False
     
     print("\nAttempting to connect to MongoDB...")
     collection = connect_to_mongodb(mongodb_url)
     if not collection:
-        sys.exit(1)
+        return False
     
     print(f"\nProcessing images from folder: {folder_path}")
     success = process_images(
@@ -102,5 +97,14 @@ if __name__ == "__main__":
         repo_name="crawler-fgo.vn"
     )
     
+    return success
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python upload_to_db.py <folder_path>")
+        sys.exit(1)
+        
+    folder_path = sys.argv[1]
+    success = main(folder_path)
     if not success:
         sys.exit(1) 

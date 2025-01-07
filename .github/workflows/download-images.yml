@@ -135,16 +135,23 @@ jobs:
           # Debug environment variable
           echo "Checking MongoDB URL presence..."
           if [ -n "$MONGODB_URL" ]; then
-            echo "MongoDB URL is set"
+            echo "MongoDB URL is set with length: ${#MONGODB_URL}"
           else
             echo "MongoDB URL is not set"
+            exit 1
           fi
           
-          # Process each image folder
+          # Process each image folder with environment variable
           for folder in images_*; do
             if [ -d "$folder" ]; then
               echo "Processing folder: $folder"
-              MONGODB_URL="$MONGODB_URL" python upload_to_db.py "$folder"
+              # Pass environment variable directly to Python
+              python -c "
+import os
+os.environ['MONGODB_URL'] = '$MONGODB_URL'
+import upload_to_db
+upload_to_db.main('$folder')
+              "
             fi
           done
 
