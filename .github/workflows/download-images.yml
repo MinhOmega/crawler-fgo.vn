@@ -141,17 +141,11 @@ jobs:
             exit 1
           fi
           
-          # Process each image folder with environment variable
+          # Process each image folder
           for folder in images_*; do
             if [ -d "$folder" ]; then
               echo "Processing folder: $folder"
-              # Pass environment variable directly to Python
-              python -c "
-import os
-os.environ['MONGODB_URL'] = '$MONGODB_URL'
-import upload_to_db
-upload_to_db.main('$folder')
-              "
+              python3 -c "import os,sys; os.environ['MONGODB_URL']=os.environ.get('MONGODB_URL',''); sys.path.append('.'); import upload_to_db; upload_to_db.main('$folder')"
             fi
           done
 
