@@ -21,7 +21,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PAT }}
 
@@ -99,7 +99,9 @@ jobs:
           
           # Only update range.json if this is the last batch
           if [ ! -f range.json ] || [ ${{ matrix.range.end }} -eq $(jq -r '.end' range.json) ]; then
-            echo "{\"start\": ${{ matrix.range.end + 1 }}, \"end\": ${{ matrix.range.end + 501 }}}" > range.json
+            next_start=$((${{ matrix.range.end }} + 1))
+            next_end=$((${{ matrix.range.end }} + 501))
+            echo "{\"start\": $next_start, \"end\": $next_end}" > range.json
             git add range.json
           fi
           
