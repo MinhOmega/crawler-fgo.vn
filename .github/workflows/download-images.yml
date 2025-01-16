@@ -118,7 +118,6 @@ jobs:
 
   commit-changes:
     needs: [prepare-matrix, download-batch]
-    if: needs.download-batch.outputs.has_images == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
